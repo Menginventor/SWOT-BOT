@@ -12,6 +12,8 @@ body {
   color: #eee;
   font-family: sans-serif;
   overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 /* ===== CAMERA BACKGROUND ===== */
@@ -38,6 +40,16 @@ body {
   left: 12px;
   top: 12px;
   font-size: 24px;
+  background: none;
+  border: none;
+  color: #eee;
+}
+
+#fullscreenBtn {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  font-size: 20px;
   background: none;
   border: none;
   color: #eee;
@@ -138,26 +150,29 @@ body {
   <div class="setting">
     <label>Max Speed</label>
     <input type="range" min="0.2" max="1" step="0.1"
-           oninput="maxSpeed=parseFloat(this.value); saveSettings()">
+      oninput="maxSpeed=parseFloat(this.value); saveSettings()">
   </div>
 
   <div class="setting">
     <label>
-      <input type="checkbox" onchange="invertSteering=this.checked; saveSettings()">
+      <input type="checkbox"
+        onchange="invertSteering=this.checked; saveSettings()">
       Invert Steering
     </label>
   </div>
 
   <div class="setting">
     <label>
-      <input type="checkbox" onchange="invertThrottle=this.checked; saveSettings()">
+      <input type="checkbox"
+        onchange="invertThrottle=this.checked; saveSettings()">
       Invert Throttle
     </label>
   </div>
 
   <div class="setting">
     <label>
-      <input type="checkbox" onchange="toggleCamera(this.checked)">
+      <input type="checkbox"
+        onchange="toggleCamera(this.checked)">
       Camera Background
     </label>
   </div>
@@ -169,6 +184,7 @@ body {
 <div id="top">
   <button id="menuBtn" onclick="openSettings()">☰</button>
   <button onclick="connect()">🔗 Connect</button>
+  <button id="fullscreenBtn" onclick="toggleFullscreen()">⛶</button>
   <div id="status">Disconnected</div>
   <div id="battery">V: --.- V | I: ---.- mA</div>
 </div>
@@ -189,9 +205,7 @@ const TX = '12345678-1234-1234-1234-1234567890ad';
 let device, rxChar, txChar;
 
 /* ================= STATE ================= */
-let throttle = 0;
-let steering = 0;
-let rxBuffer = "";
+let throttle = 0, steering = 0, rxBuffer = "";
 
 /* ================= SETTINGS ================= */
 let maxSpeed = parseFloat(localStorage.getItem("maxSpeed")) || 1.0;
@@ -220,8 +234,7 @@ async function connect() {
 
 /* ================= BLE RX ================= */
 function onNotify(e) {
-  const text = new TextDecoder().decode(e.target.value);
-  rxBuffer += text;
+  rxBuffer += new TextDecoder().decode(e.target.value);
   if (rxBuffer.includes('\n')) {
     handleStatus(rxBuffer.trim());
     rxBuffer = "";
@@ -235,12 +248,9 @@ setInterval(() => {
   let left  = (throttle - steering) * maxSpeed;
   let right = (throttle + steering) * maxSpeed;
 
-  left  = Math.max(-1, Math.min(1, left));
-  right = Math.max(-1, Math.min(1, right));
-
-  rxChar.writeValue(
-    new TextEncoder().encode(`motor ${Math.round(left*255)},${Math.round(right*255)}\n`)
-  );
+  rxChar.writeValue(new TextEncoder().encode(
+    `motor ${Math.round(left*255)},${Math.round(right*255)}\n`
+  ));
 }, 20);
 
 /* ================= STATUS ================= */
@@ -259,12 +269,11 @@ function setupJoystick(el) {
   const r = el.clientWidth / 2;
   const kr = knob.clientWidth / 2;
 
-  function move(x,y) {
+  function move(x,y){
     const dx=x-r, dy=y-r;
     const d=Math.min(r-kr,Math.hypot(dx,dy));
     const a=Math.atan2(dy,dx);
     const px=Math.cos(a)*d, py=Math.sin(a)*d;
-
     knob.style.transform=`translate(${px}px,${py}px) translate(-50%,-50%)`;
 
     steering = invertSteering ? px/(r-kr) : -px/(r-kr);
@@ -286,7 +295,6 @@ function setupJoystick(el) {
 
 /* ================= CAMERA ================= */
 let cameraStream=null;
-
 async function toggleCamera(enable){
   cameraEnabled=enable;
   localStorage.setItem("cameraBG",enable);
@@ -294,7 +302,7 @@ async function toggleCamera(enable){
   const v=document.getElementById("cameraBG");
   if(enable){
     cameraStream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:"environment"}},audio:false
+      video:{facingMode:{ideal:"environment"}}, audio:false
     });
     v.srcObject=cameraStream;
     v.style.display="block";
@@ -305,14 +313,21 @@ async function toggleCamera(enable){
   }
 }
 
+/* ================= FULLSCREEN ================= */
+function toggleFullscreen(){
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen();
+  }else{
+    document.exitFullscreen();
+  }
+}
+
 /* ================= UI ================= */
 function openSettings(){
-  document.getElementById("overlay").style.display="block";
-  document.getElementById("settings").style.display="block";
+  overlay.style.display=settings.style.display="block";
 }
 function closeSettings(){
-  document.getElementById("overlay").style.display="none";
-  document.getElementById("settings").style.display="none";
+  overlay.style.display=settings.style.display="none";
 }
 function saveSettings(){
   localStorage.setItem("maxSpeed",maxSpeed);
