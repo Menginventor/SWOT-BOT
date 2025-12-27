@@ -1,6 +1,8 @@
 # SWOT-Bot  
 **Smartphone–Web-based Outdoor Teleoperation Robot**
 
+👉 **[Web BLE Robot Controller (Live Demo)](https://menginventor.github.io/SWOT-BOT/)**
+
 ---
 
 ## Overview
