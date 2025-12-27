@@ -124,8 +124,8 @@ setInterval(() => {
   const L = Math.round(left  * 255);
   const R = Math.round(right * 255);
 
-  const cmd = `motor ${L},${R}`;
-  rxChar.writeValue(new TextEncoder().encode(cmd));
+const cmd = `motor ${L},${R}\n`;
+rxChar.writeValue(new TextEncoder().encode(cmd));
 }, 20);
 
 // Request status every 100 ms
