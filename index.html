@@ -91,7 +91,7 @@ let steering = 0; // -1 .. +1
 /* ================= BLE ================= */
 async function connect() {
   device = await navigator.bluetooth.requestDevice({
-    filters: [{ name: 'ESP32_ROBOT' }],
+    filters: [{ name: 'ESP32_ROBOT-ble' }],
     optionalServices: [SERVICE]
   });
 
