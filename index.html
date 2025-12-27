@@ -6,7 +6,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-/* ===== SAME CSS AS YOUR VERSION (UNCHANGED) ===== */
 body {
   margin: 0;
   background: #111;
@@ -17,6 +16,7 @@ body {
   touch-action: none;
 }
 
+/* ===== CAMERA ===== */
 #cameraBG {
   position: fixed;
   inset: 0;
@@ -27,6 +27,7 @@ body {
   z-index: 0;
 }
 
+/* ===== TOP BAR ===== */
 #top {
   padding: 12px;
   text-align: center;
@@ -46,12 +47,19 @@ body {
 #menuBtn { left: 12px; }
 #fullscreenBtn { right: 12px; }
 
-#status { font-size: 14px; font-weight: 600; }
+#status {
+  font-size: 14px;
+  font-weight: 600;
+}
 .status-connected { color: #4cff88; }
 .status-disconnected { color: #ff5c5c; }
 
-#battery { margin-top: 6px; font-size: 15px; }
+#battery {
+  margin-top: 6px;
+  font-size: 15px;
+}
 
+/* ===== JOYSTICK ===== */
 #joysticks {
   position: fixed;
   right: 20px;
@@ -81,6 +89,7 @@ body {
   transform: translate(-50%, -50%);
 }
 
+/* ===== OVERLAY ===== */
 #overlay {
   position: fixed;
   inset: 0;
@@ -89,6 +98,7 @@ body {
   z-index: 1000;
 }
 
+/* ===== SETTINGS MODAL ===== */
 #settingsModal {
   position: fixed;
   top: 50%;
@@ -112,6 +122,7 @@ body {
 }
 
 .settings-section { margin-bottom: 18px; }
+
 .settings-section-title {
   font-size: 13px;
   color: #aaa;
@@ -157,6 +168,7 @@ input[type="range"] { width: 100%; }
 <video id="cameraBG" autoplay muted playsinline></video>
 <div id="overlay"></div>
 
+<!-- ===== SETTINGS ===== -->
 <div id="settingsModal">
   <div class="settings-header">⚙ Settings</div>
 
@@ -191,6 +203,7 @@ input[type="range"] { width: 100%; }
   <button class="secondary-btn" id="closeSettingsBtn">Close</button>
 </div>
 
+<!-- ===== TOP BAR ===== -->
 <div id="top">
   <button id="menuBtn">☰</button>
   <button id="fullscreenBtn">⛶</button>
@@ -198,6 +211,7 @@ input[type="range"] { width: 100%; }
   <div id="battery">V: --.- V | I: ---.- mA</div>
 </div>
 
+<!-- ===== JOYSTICK ===== -->
 <div id="joysticks">
   <div class="joy" id="joyDrive">
     <div class="knob"></div>
@@ -213,8 +227,15 @@ const TX = "12345678-1234-1234-1234-1234567890ad";
 let device, rxChar, txChar;
 let rxBuffer = "";
 
-/* ================= CONTROL ================= */
-let throttle = 0, steering = 0;
+/* ================= DOM ================= */
+const overlay = document.getElementById("overlay");
+const settingsModal = document.getElementById("settingsModal");
+const statusEl = document.getElementById("status");
+const cameraBG = document.getElementById("cameraBG");
+
+/* ================= CONTROL STATE ================= */
+let throttle = 0;
+let steering = 0;
 
 /* ================= SETTINGS ================= */
 let appSettings = Object.assign({
@@ -240,8 +261,14 @@ invertThrottle.onchange = e => { appSettings.invertThrottle = e.target.checked; 
 cameraToggle.onchange = e => toggleCamera(e.target.checked);
 
 /* ================= SETTINGS MODAL ================= */
-menuBtn.onclick = () => { overlay.style.display = settingsModal.style.display = "block"; };
-closeSettingsBtn.onclick = overlay.onclick = () => { overlay.style.display = settingsModal.style.display = "none"; };
+menuBtn.onclick = () => {
+  overlay.style.display = "block";
+  settingsModal.style.display = "block";
+};
+closeSettingsBtn.onclick = overlay.onclick = () => {
+  overlay.style.display = "none";
+  settingsModal.style.display = "none";
+};
 
 /* ================= CAMERA ================= */
 let cameraStream = null;
@@ -260,7 +287,7 @@ async function toggleCamera(on) {
   }
 }
 
-/* ================= BLE CONNECT (REAL) ================= */
+/* ================= BLE CONNECT ================= */
 connectBtn.onclick = async () => {
   try {
     device = await navigator.bluetooth.requestDevice({
@@ -277,11 +304,11 @@ connectBtn.onclick = async () => {
     await txChar.startNotifications();
     txChar.addEventListener("characteristicvaluechanged", onNotify);
 
-    status.textContent = "Connected";
-    status.className = "status-connected";
+    statusEl.textContent = "Connected";
+    statusEl.className = "status-connected";
   } catch (e) {
-    status.textContent = "Disconnected";
-    status.className = "status-disconnected";
+    statusEl.textContent = "Disconnected";
+    statusEl.className = "status-disconnected";
     console.error(e);
   }
 };
@@ -325,6 +352,7 @@ function setupJoystick(el) {
   const r = el.clientWidth / 2;
   const kr = knob.clientWidth / 2;
   const maxDist = r - kr;
+
   let active = false, sx = 0, sy = 0;
 
   function update(dx, dy) {
@@ -350,6 +378,15 @@ function setupJoystick(el) {
     throttle = steering = 0;
   });
 }
+
+/* ================= FULLSCREEN (FIXED) ================= */
+fullscreenBtn.onclick = () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+};
 
 /* ================= INIT ================= */
 setupJoystick(document.getElementById("joyDrive"));
