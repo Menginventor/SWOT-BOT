@@ -11,27 +11,32 @@ body {
   background: #111;
   color: #eee;
   font-family: sans-serif;
-  text-align: center;
 }
 
 #top {
-  padding: 10px;
+  padding: 12px;
+  text-align: center;
 }
 
 #status {
   font-size: 14px;
-  margin-top: 5px;
+  margin-top: 4px;
+}
+
+#battery {
+  margin-top: 6px;
+  font-size: 16px;
 }
 
 #joysticks {
-  display: flex;
-  justify-content: space-around;
-  margin-top: 20px;
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
 }
 
 .joy {
-  width: 160px;
-  height: 160px;
+  width: 180px;
+  height: 180px;
   background: #222;
   border-radius: 50%;
   position: relative;
@@ -39,8 +44,8 @@ body {
 }
 
 .knob {
-  width: 60px;
-  height: 60px;
+  width: 70px;
+  height: 70px;
   background: #555;
   border-radius: 50%;
   position: absolute;
@@ -56,25 +61,14 @@ body {
 <div id="top">
   <button onclick="connect()">🔗 Connect</button>
   <div id="status">Disconnected</div>
+  <div id="battery">V: --.- V | I: ---.- mA</div>
 </div>
 
 <div id="joysticks">
-  <div>
-    <div>Throttle</div>
-    <div class="joy" id="joyThrottle">
-      <div class="knob"></div>
-    </div>
-  </div>
-
-  <div>
-    <div>Steering</div>
-    <div class="joy" id="joySteer">
-      <div class="knob"></div>
-    </div>
+  <div class="joy" id="joyDrive">
+    <div class="knob"></div>
   </div>
 </div>
-
-<pre id="log"></pre>
 
 <script>
 /* ================= BLE CONFIG ================= */
@@ -91,7 +85,7 @@ let steering = 0; // -1 .. +1
 /* ================= BLE ================= */
 async function connect() {
   device = await navigator.bluetooth.requestDevice({
-    filters: [{ name: 'ESP32_ROBOT-ble' }],
+    acceptAllDevices: true,
     optionalServices: [SERVICE]
   });
 
@@ -104,14 +98,15 @@ async function connect() {
   await txChar.startNotifications();
   txChar.addEventListener('characteristicvaluechanged', e => {
     const msg = new TextDecoder().decode(e.target.value);
-    document.getElementById('log').textContent = msg;
+    handleStatus(msg);
   });
 
-  document.getElementById('status').textContent = 'Connected';
+  document.getElementById('status').textContent =
+    'Connected: ' + (device.name || 'Unknown');
 }
 
 /* ================= CONTROL LOOP ================= */
-// Send motor command every 20 ms
+// Motor command every 20 ms
 setInterval(() => {
   if (!rxChar) return;
 
@@ -124,15 +119,26 @@ setInterval(() => {
   const L = Math.round(left  * 255);
   const R = Math.round(right * 255);
 
-const cmd = `motor ${L},${R}\n`;
-rxChar.writeValue(new TextEncoder().encode(cmd));
+  const cmd = `motor ${L},${R}\n`;
+  rxChar.writeValue(new TextEncoder().encode(cmd));
 }, 20);
 
-// Request status every 100 ms
+// Status request every 100 ms
 setInterval(() => {
   if (!rxChar) return;
-  rxChar.writeValue(new TextEncoder().encode("status"));
+  rxChar.writeValue(new TextEncoder().encode("status\n"));
 }, 100);
+
+/* ================= STATUS PARSER ================= */
+function handleStatus(msg) {
+  const vMatch = msg.match(/V=([\d.]+)/);
+  const iMatch = msg.match(/I=([\d.]+)/);
+
+  if (vMatch && iMatch) {
+    document.getElementById('battery').textContent =
+      `V: ${parseFloat(vMatch[1]).toFixed(2)} V | I: ${parseFloat(iMatch[1]).toFixed(1)} mA`;
+  }
+}
 
 /* ================= JOYSTICK ================= */
 function setupJoystick(elem, onMove) {
@@ -152,8 +158,10 @@ function setupJoystick(elem, onMove) {
     knob.style.transform =
       `translate(${px}px, ${py}px) translate(-50%, -50%)`;
 
-    onMove(px / (radius - knobRadius),
-           py / (radius - knobRadius));
+    onMove(
+      px / (radius - knobRadius),
+      py / (radius - knobRadius)
+    );
   }
 
   elem.addEventListener('pointerdown', e => {
@@ -162,8 +170,7 @@ function setupJoystick(elem, onMove) {
   });
 
   elem.addEventListener('pointermove', e => {
-    if (e.pressure > 0)
-      move(e.offsetX, e.offsetY);
+    if (e.pressure > 0) move(e.offsetX, e.offsetY);
   });
 
   elem.addEventListener('pointerup', () => {
@@ -174,13 +181,11 @@ function setupJoystick(elem, onMove) {
 
 /* ================= INIT ================= */
 setupJoystick(
-  document.getElementById('joyThrottle'),
-  (x, y) => throttle = -y   // vertical only
-);
-
-setupJoystick(
-  document.getElementById('joySteer'),
-  (x, y) => steering = x    // horizontal only
+  document.getElementById('joyDrive'),
+  (x, y) => {
+    steering = x;   // left / right
+    throttle = -y;  // forward / backward
+  }
 );
 </script>
 
