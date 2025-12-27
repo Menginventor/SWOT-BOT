@@ -79,8 +79,9 @@ const TX = '12345678-1234-1234-1234-1234567890ad';
 let device, rxChar, txChar;
 
 /* ================= STATE ================= */
-let throttle = 0; // -1 .. +1
-let steering = 0; // -1 .. +1
+let throttle = 0;   // -1 .. +1
+let steering = 0;   // -1 .. +1
+let rxBuffer = "";  // BLE TX line buffer
 
 /* ================= BLE ================= */
 async function connect() {
@@ -96,15 +97,27 @@ async function connect() {
   txChar = await service.getCharacteristic(TX);
 
   await txChar.startNotifications();
-  txChar.addEventListener('characteristicvaluechanged', e => {
-    const msg = new TextDecoder().decode(e.target.value);
-    handleStatus(msg);
-  });
+  txChar.addEventListener('characteristicvaluechanged', onNotify);
 
   document.getElementById('status').textContent =
     'Connected: ESP32_ROBOT-ble';
 }
 
+/* ================= BLE NOTIFY RX ================= */
+function onNotify(e) {
+  const chunk = new TextDecoder().decode(e.target.value);
+
+  for (let c of chunk) {
+    if (c === '\n' || c === '\r') {
+      if (rxBuffer.length > 0) {
+        handleStatus(rxBuffer);
+        rxBuffer = "";
+      }
+    } else {
+      rxBuffer += c;
+    }
+  }
+}
 
 /* ================= CONTROL LOOP ================= */
 // Motor command every 20 ms
@@ -132,6 +145,7 @@ setInterval(() => {
 
 /* ================= STATUS PARSER ================= */
 function handleStatus(msg) {
+  // Expect: status V=7.41 I=320.5
   const vMatch = msg.match(/V=([\d.]+)/);
   const iMatch = msg.match(/I=([\d.]+)/);
 
@@ -184,7 +198,7 @@ function setupJoystick(elem, onMove) {
 setupJoystick(
   document.getElementById('joyDrive'),
   (x, y) => {
-    steering = x;   // left / right
+    steering = -x;  // FIXED: invert steering direction
     throttle = -y;  // forward / backward
   }
 );
