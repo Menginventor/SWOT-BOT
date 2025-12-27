@@ -137,12 +137,6 @@ setInterval(() => {
   rxChar.writeValue(new TextEncoder().encode(cmd));
 }, 20);
 
-// Status request every 100 ms
-setInterval(() => {
-  if (!rxChar) return;
-  rxChar.writeValue(new TextEncoder().encode("status\n"));
-}, 100);
-
 /* ================= STATUS PARSER ================= */
 function handleStatus(msg) {
   // Expect: status V=7.41 I=320.5
@@ -198,7 +192,7 @@ function setupJoystick(elem, onMove) {
 setupJoystick(
   document.getElementById('joyDrive'),
   (x, y) => {
-    steering = -x;  // FIXED: invert steering direction
+    steering = -x;  // correct steering direction
     throttle = -y;  // forward / backward
   }
 );
