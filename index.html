@@ -85,7 +85,7 @@ let steering = 0; // -1 .. +1
 /* ================= BLE ================= */
 async function connect() {
   device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
+    filters: [{ name: 'ESP32_ROBOT-ble' }],
     optionalServices: [SERVICE]
   });
 
@@ -102,8 +102,9 @@ async function connect() {
   });
 
   document.getElementById('status').textContent =
-    'Connected: ' + (device.name || 'Unknown');
+    'Connected: ESP32_ROBOT-ble';
 }
+
 
 /* ================= CONTROL LOOP ================= */
 // Motor command every 20 ms
