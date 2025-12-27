@@ -51,7 +51,6 @@ body {
   font-size: 14px;
   font-weight: 600;
 }
-
 .status-connected { color: #4cff88; }
 .status-disconnected { color: #ff5c5c; }
 
@@ -115,7 +114,6 @@ body {
   box-shadow: 0 20px 40px rgba(0,0,0,0.7);
 }
 
-/* Header */
 .settings-header {
   text-align: center;
   font-size: 18px;
@@ -123,7 +121,6 @@ body {
   margin-bottom: 16px;
 }
 
-/* Sections */
 .settings-section {
   margin-bottom: 18px;
 }
@@ -135,7 +132,6 @@ body {
   text-transform: uppercase;
 }
 
-/* Buttons */
 .primary-btn {
   width: 100%;
   padding: 10px;
@@ -157,12 +153,6 @@ body {
   color: #eee;
 }
 
-/* Slider */
-input[type="range"] {
-  width: 100%;
-}
-
-/* Toggle rows */
 .toggle-row {
   display: flex;
   justify-content: space-between;
@@ -171,9 +161,7 @@ input[type="range"] {
   font-size: 15px;
 }
 
-.toggle-row input {
-  transform: scale(1.2);
-}
+input[type="range"] { width: 100%; }
 </style>
 </head>
 
@@ -183,18 +171,16 @@ input[type="range"] {
 
 <div id="overlay"></div>
 
-<!-- ===== SETTINGS MODAL ===== -->
+<!-- ===== SETTINGS ===== -->
 <div id="settingsModal">
-
   <div class="settings-header">⚙ Settings</div>
 
   <div class="settings-section">
-    <button class="primary-btn" id="connectBtn"> Connect to BLE</button>
+    <button class="primary-btn" id="connectBtn">Connect to BLE</button>
   </div>
 
   <div class="settings-section">
     <div class="settings-section-title">Driving</div>
-
     <label>Max Speed</label>
     <input id="speedSlider" type="range" min="0.2" max="1" step="0.1">
 
@@ -211,7 +197,6 @@ input[type="range"] {
 
   <div class="settings-section">
     <div class="settings-section-title">View</div>
-
     <div class="toggle-row">
       <span>Camera Background</span>
       <input id="cameraToggle" type="checkbox">
@@ -243,7 +228,11 @@ const settingsModal = document.getElementById("settingsModal");
 const statusEl = document.getElementById("status");
 const cameraBG = document.getElementById("cameraBG");
 
-/* ===== SETTINGS STATE ===== */
+/* ===== CONTROL STATE ===== */
+let throttle = 0;
+let steering = 0;
+
+/* ===== SETTINGS ===== */
 let appSettings = Object.assign({
   maxSpeed: 1.0,
   invertSteering: false,
@@ -262,30 +251,26 @@ function saveSettings() {
   localStorage.setItem("settings", JSON.stringify(appSettings));
 }
 
-/* ===== EVENTS ===== */
+/* ===== SETTINGS EVENTS ===== */
 speedSlider.oninput = e => {
   appSettings.maxSpeed = +e.target.value;
   saveSettings();
 };
-
 invertSteer.onchange = e => {
   appSettings.invertSteering = e.target.checked;
   saveSettings();
 };
-
 invertThrottle.onchange = e => {
   appSettings.invertThrottle = e.target.checked;
   saveSettings();
 };
-
 cameraToggle.onchange = e => toggleCamera(e.target.checked);
 
-/* ===== MODAL ===== */
+/* ===== SETTINGS MODAL ===== */
 menuBtn.onclick = () => {
   overlay.style.display = "block";
   settingsModal.style.display = "block";
 };
-
 closeSettingsBtn.onclick = overlay.onclick = () => {
   overlay.style.display = "none";
   settingsModal.style.display = "none";
@@ -293,7 +278,6 @@ closeSettingsBtn.onclick = overlay.onclick = () => {
 
 /* ===== CAMERA ===== */
 let cameraStream = null;
-
 async function toggleCamera(on) {
   appSettings.cameraBG = on;
   saveSettings();
@@ -307,19 +291,59 @@ async function toggleCamera(on) {
       });
       cameraBG.srcObject = cameraStream;
       cameraBG.style.display = "block";
-    } catch {
-      cameraToggle.checked = false;
-    }
+    } catch {}
   } else {
     cameraBG.style.display = "none";
     cameraStream?.getTracks().forEach(t => t.stop());
   }
 }
 
-/* ===== BLE STATUS (mock connect) ===== */
+/* ===== RELATIVE JOYSTICK (FIXED) ===== */
+function setupJoystick(el) {
+  const knob = el.querySelector(".knob");
+  const r = el.clientWidth / 2;
+  const kr = knob.clientWidth / 2;
+  const maxDist = r - kr;
+
+  let active = false;
+  let sx = 0, sy = 0;
+
+  function update(dx, dy) {
+    const d = Math.min(maxDist, Math.hypot(dx, dy));
+    const a = Math.atan2(dy, dx);
+    const px = Math.cos(a) * d;
+    const py = Math.sin(a) * d;
+
+    knob.style.transform =
+      `translate(${px}px, ${py}px) translate(-50%, -50%)`;
+
+    steering = appSettings.invertSteering ? px / maxDist : -px / maxDist;
+    throttle = appSettings.invertThrottle ? py / maxDist : -py / maxDist;
+  }
+
+  el.addEventListener("pointerdown", e => {
+    el.setPointerCapture(e.pointerId);
+    active = true;
+    sx = e.clientX;
+    sy = e.clientY;
+    update(0, 0);
+  });
+
+  el.addEventListener("pointermove", e => {
+    if (active) update(e.clientX - sx, e.clientY - sy);
+  });
+
+  el.addEventListener("pointerup", () => {
+    active = false;
+    knob.style.transform = "translate(-50%, -50%)";
+    throttle = steering = 0;
+  });
+}
+
+/* ===== BLE MOCK (STATUS ONLY) ===== */
 connectBtn.onclick = async () => {
   try {
-    await navigator.bluetooth.requestDevice({ filters:[{name:'ESP32_ROBOT-ble'}] });
+    await navigator.bluetooth.requestDevice({ filters:[{name:"ESP32_ROBOT-ble"}] });
     statusEl.textContent = "Connected";
     statusEl.className = "status-connected";
   } catch {
@@ -336,6 +360,7 @@ fullscreenBtn.onclick = () => {
 };
 
 /* ===== INIT ===== */
+setupJoystick(document.getElementById("joyDrive"));
 if (appSettings.cameraBG) toggleCamera(true);
 </script>
 
