@@ -65,7 +65,7 @@ body {
   font-size: 16px;
 }
 
-/* ===== JOYSTICK (TRANSPARENT HUD STYLE) ===== */
+/* ===== JOYSTICK ===== */
 #joysticks {
   position: fixed;
   right: 20px;
@@ -76,24 +76,24 @@ body {
 .joy {
   width: 180px;
   height: 180px;
-  background: rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.04);
   border-radius: 50%;
   position: relative;
   touch-action: none;
   backdrop-filter: blur(2px);
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.12);
 }
 
 .knob {
   width: 70px;
   height: 70px;
-  background: rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.3);
   border-radius: 50%;
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  border: 1px solid rgba(255,255,255,0.6);
+  border: 1px solid rgba(255,255,255,0.5);
 }
 
 /* ===== MODAL ===== */
@@ -150,30 +150,26 @@ body {
 
   <div class="setting">
     <label>Max Speed</label>
-    <input type="range" min="0.2" max="1" step="0.1"
-      oninput="maxSpeed=parseFloat(this.value); saveSettings()">
+    <input id="speedSlider" type="range" min="0.2" max="1" step="0.1">
   </div>
 
   <div class="setting">
     <label>
-      <input type="checkbox"
-        onchange="invertSteering=this.checked; saveSettings()">
+      <input id="invertSteeringChk" type="checkbox">
       Invert Steering
     </label>
   </div>
 
   <div class="setting">
     <label>
-      <input type="checkbox"
-        onchange="invertThrottle=this.checked; saveSettings()">
+      <input id="invertThrottleChk" type="checkbox">
       Invert Throttle
     </label>
   </div>
 
   <div class="setting">
     <label>
-      <input type="checkbox"
-        onchange="toggleCamera(this.checked)">
+      <input id="cameraToggle" type="checkbox">
       Camera Background
     </label>
   </div>
@@ -196,17 +192,60 @@ body {
 </div>
 
 <script>
+/* ================= BLE CONFIG ================= */
 const SERVICE='12345678-1234-1234-1234-1234567890ab';
 const RX='12345678-1234-1234-1234-1234567890ac';
 const TX='12345678-1234-1234-1234-1234567890ad';
 
 let device,rxChar,txChar;
 let throttle=0,steering=0,rxBuffer="";
-let maxSpeed=parseFloat(localStorage.getItem("maxSpeed"))||1;
-let invertSteering=localStorage.getItem("invertSteering")==="true";
-let invertThrottle=localStorage.getItem("invertThrottle")==="true";
-let cameraEnabled=localStorage.getItem("cameraBG")==="true";
+let cameraStream=null;
 
+/* ================= SETTINGS STATE ================= */
+let settings = {
+  maxSpeed: 1.0,
+  invertSteering: false,
+  invertThrottle: false,
+  cameraBG: false
+};
+
+/* ================= SETTINGS LOAD/SAVE ================= */
+function loadSettings() {
+  Object.assign(settings, JSON.parse(localStorage.getItem("settings") || "{}"));
+
+  speedSlider.value = settings.maxSpeed;
+  invertSteeringChk.checked = settings.invertSteering;
+  invertThrottleChk.checked = settings.invertThrottle;
+  cameraToggle.checked = settings.cameraBG;
+
+  if (settings.cameraBG) toggleCamera(true);
+}
+
+function saveSettings() {
+  localStorage.setItem("settings", JSON.stringify(settings));
+}
+
+/* ================= UI EVENTS ================= */
+speedSlider.oninput = e => {
+  settings.maxSpeed = parseFloat(e.target.value);
+  saveSettings();
+};
+
+invertSteeringChk.onchange = e => {
+  settings.invertSteering = e.target.checked;
+  saveSettings();
+};
+
+invertThrottleChk.onchange = e => {
+  settings.invertThrottle = e.target.checked;
+  saveSettings();
+};
+
+cameraToggle.onchange = e => {
+  toggleCamera(e.target.checked);
+};
+
+/* ================= BLE ================= */
 async function connect(){
   device=await navigator.bluetooth.requestDevice({
     filters:[{name:'ESP32_ROBOT-ble'}],
@@ -229,15 +268,17 @@ function onNotify(e){
   }
 }
 
+/* ================= MOTOR LOOP ================= */
 setInterval(()=>{
   if(!rxChar) return;
-  const L=(throttle-steering)*maxSpeed;
-  const R=(throttle+steering)*maxSpeed;
+  const L=(throttle-steering)*settings.maxSpeed;
+  const R=(throttle+steering)*settings.maxSpeed;
   rxChar.writeValue(new TextEncoder().encode(
     `motor ${Math.round(L*255)},${Math.round(R*255)}\n`
   ));
 },20);
 
+/* ================= STATUS ================= */
 function handleStatus(msg){
   const v=msg.match(/V=([\d.]+)/);
   const i=msg.match(/I=([\d.]+)/);
@@ -247,63 +288,79 @@ function handleStatus(msg){
   }
 }
 
-function setupJoystick(el){
-  const knob=el.querySelector('.knob');
-  const r=el.clientWidth/2, kr=knob.clientWidth/2;
-  function move(x,y){
-    const dx=x-r, dy=y-r;
-    const d=Math.min(r-kr,Math.hypot(dx,dy));
+/* ================= RELATIVE JOYSTICK ================= */
+function setupJoystick(el) {
+  const knob = el.querySelector('.knob');
+  const r = el.clientWidth/2;
+  const kr = knob.clientWidth/2;
+  const maxDist = r-kr;
+  let active=false, sx=0, sy=0;
+
+  function update(dx,dy){
+    const d=Math.min(maxDist,Math.hypot(dx,dy));
     const a=Math.atan2(dy,dx);
     const px=Math.cos(a)*d, py=Math.sin(a)*d;
     knob.style.transform=`translate(${px}px,${py}px) translate(-50%,-50%)`;
-    steering=invertSteering?px/(r-kr):-px/(r-kr);
-    throttle=invertThrottle?py/(r-kr):-py/(r-kr);
+    steering = settings.invertSteering ? px/maxDist : -px/maxDist;
+    throttle = settings.invertThrottle ? py/maxDist : -py/maxDist;
   }
+
   el.addEventListener('pointerdown',e=>{
     el.setPointerCapture(e.pointerId);
-    move(e.offsetX,e.offsetY);
+    active=true;
+    sx=e.clientX; sy=e.clientY;
+    update(0,0);
   });
+
   el.addEventListener('pointermove',e=>{
-    if(e.pressure>0) move(e.offsetX,e.offsetY);
+    if(active) update(e.clientX-sx,e.clientY-sy);
   });
+
   el.addEventListener('pointerup',()=>{
+    active=false;
     knob.style.transform='translate(-50%,-50%)';
     throttle=steering=0;
   });
 }
 
-let cameraStream=null;
+/* ================= CAMERA ================= */
 async function toggleCamera(en){
-  cameraEnabled=en;
-  localStorage.setItem("cameraBG",en);
+  settings.cameraBG=en;
+  cameraToggle.checked=en;
+  saveSettings();
+
   if(en){
-    cameraStream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:"environment"}},audio:false
-    });
-    cameraBG.srcObject=cameraStream;
-    cameraBG.style.display="block";
+    try{
+      cameraStream=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:"environment"}},audio:false
+      });
+      cameraBG.srcObject=cameraStream;
+      cameraBG.style.display="block";
+    }catch{
+      settings.cameraBG=false;
+      cameraToggle.checked=false;
+      saveSettings();
+    }
   }else{
     cameraBG.style.display="none";
     cameraStream?.getTracks().forEach(t=>t.stop());
+    cameraStream=null;
   }
 }
 
+/* ================= UI ================= */
 function toggleFullscreen(){
-  if(!document.fullscreenElement)
+  document.fullscreenElement ?
+    document.exitFullscreen() :
     document.documentElement.requestFullscreen();
-  else document.exitFullscreen();
 }
+function openSettings(){ overlay.style.display=settingsDiv.style.display="block"; }
+function closeSettings(){ overlay.style.display=settingsDiv.style.display="none"; }
 
-function openSettings(){ overlay.style.display=settings.style.display="block"; }
-function closeSettings(){ overlay.style.display=settings.style.display="none"; }
-function saveSettings(){
-  localStorage.setItem("maxSpeed",maxSpeed);
-  localStorage.setItem("invertSteering",invertSteering);
-  localStorage.setItem("invertThrottle",invertThrottle);
-}
-
+/* ================= INIT ================= */
+const settingsDiv=document.getElementById("settings");
 setupJoystick(joyDrive);
-if(cameraEnabled) toggleCamera(true);
+loadSettings();
 </script>
 
 </body>
