@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ESP32 Robot Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {
+  margin: 0;
+  background: #111;
+  color: #eee;
+  font-family: sans-serif;
+  text-align: center;
+}
+
+#top {
+  padding: 10px;
+}
+
+#status {
+  font-size: 14px;
+  margin-top: 5px;
+}
+
+#joysticks {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 20px;
+}
+
+.joy {
+  width: 160px;
+  height: 160px;
+  background: #222;
+  border-radius: 50%;
+  position: relative;
+  touch-action: none;
+}
+
+.knob {
+  width: 60px;
+  height: 60px;
+  background: #555;
+  border-radius: 50%;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+</style>
+</head>
+
+<body>
+
+<div id="top">
+  <button onclick="connect()">🔗 Connect</button>
+  <div id="status">Disconnected</div>
+</div>
+
+<div id="joysticks">
+  <div>
+    <div>Throttle</div>
+    <div class="joy" id="joyThrottle">
+      <div class="knob"></div>
+    </div>
+  </div>
+
+  <div>
+    <div>Steering</div>
+    <div class="joy" id="joySteer">
+      <div class="knob"></div>
+    </div>
+  </div>
+</div>
+
+<pre id="log"></pre>
+
+<script>
+/* ================= BLE CONFIG ================= */
+const SERVICE = '12345678-1234-1234-1234-1234567890ab';
+const RX = '12345678-1234-1234-1234-1234567890ac';
+const TX = '12345678-1234-1234-1234-1234567890ad';
+
+let device, rxChar, txChar;
+
+/* ================= STATE ================= */
+let throttle = 0; // -1 .. +1
+let steering = 0; // -1 .. +1
+
+/* ================= BLE ================= */
+async function connect() {
+  device = await navigator.bluetooth.requestDevice({
+    filters: [{ name: 'ESP32_ROBOT' }],
+    optionalServices: [SERVICE]
+  });
+
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(SERVICE);
+
+  rxChar = await service.getCharacteristic(RX);
+  txChar = await service.getCharacteristic(TX);
+
+  await txChar.startNotifications();
+  txChar.addEventListener('characteristicvaluechanged', e => {
+    const msg = new TextDecoder().decode(e.target.value);
+    document.getElementById('log').textContent = msg;
+  });
+
+  document.getElementById('status').textContent = 'Connected';
+}
+
+/* ================= CONTROL LOOP ================= */
+// Send motor command every 20 ms
+setInterval(() => {
+  if (!rxChar) return;
+
+  let left  = throttle - steering;
+  let right = throttle + steering;
+
+  left  = Math.max(-1, Math.min(1, left));
+  right = Math.max(-1, Math.min(1, right));
+
+  const L = Math.round(left  * 255);
+  const R = Math.round(right * 255);
+
+  const cmd = `motor ${L},${R}`;
+  rxChar.writeValue(new TextEncoder().encode(cmd));
+}, 20);
+
+// Request status every 100 ms
+setInterval(() => {
+  if (!rxChar) return;
+  rxChar.writeValue(new TextEncoder().encode("status"));
+}, 100);
+
+/* ================= JOYSTICK ================= */
+function setupJoystick(elem, onMove) {
+  const knob = elem.querySelector('.knob');
+  const radius = elem.clientWidth / 2;
+  const knobRadius = knob.clientWidth / 2;
+
+  function move(x, y) {
+    const dx = x - radius;
+    const dy = y - radius;
+    const dist = Math.min(radius - knobRadius, Math.hypot(dx, dy));
+    const angle = Math.atan2(dy, dx);
+
+    const px = Math.cos(angle) * dist;
+    const py = Math.sin(angle) * dist;
+
+    knob.style.transform =
+      `translate(${px}px, ${py}px) translate(-50%, -50%)`;
+
+    onMove(px / (radius - knobRadius),
+           py / (radius - knobRadius));
+  }
+
+  elem.addEventListener('pointerdown', e => {
+    elem.setPointerCapture(e.pointerId);
+    move(e.offsetX, e.offsetY);
+  });
+
+  elem.addEventListener('pointermove', e => {
+    if (e.pressure > 0)
+      move(e.offsetX, e.offsetY);
+  });
+
+  elem.addEventListener('pointerup', () => {
+    knob.style.transform = 'translate(-50%, -50%)';
+    onMove(0, 0);
+  });
+}
+
+/* ================= INIT ================= */
+setupJoystick(
+  document.getElementById('joyThrottle'),
+  (x, y) => throttle = -y   // vertical only
+);
+
+setupJoystick(
+  document.getElementById('joySteer'),
+  (x, y) => steering = x    // horizontal only
+);
+</script>
+
+</body>
+</html>
